@@ -1,5 +1,9 @@
 # AI Product Building
 
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+![Claude Code](https://img.shields.io/badge/Claude_Code-Skills-blue)
+![Phase: 1.0](https://img.shields.io/badge/Phase-1.0-green)
+
 A working library of prompts and skills for taking an AI product from idea to launch. Organized by build phase so you can walk through the repo as a build sequence.
 
 ## How the repo is organized
