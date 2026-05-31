@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Landing experiment admin</title>
+<style>
+  body { font: 14px/1.5 -apple-system, sans-serif; margin: 0; padding: 32px; background: #fafafa; color: #1a1a1a; }
+  h1 { font-size: 24px; margin: 0 0 24px; }
+  .gate { max-width: 320px; margin: 80px auto; }
+  .gate input { width: 100%; padding: 10px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px; }
+  .gate button { width: 100%; margin-top: 12px; padding: 10px; font-size: 16px; background: #1a1a1a; color: white; border: 0; border-radius: 6px; cursor: pointer; }
+  .hidden { display: none; }
+  table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  th, td { padding: 14px 16px; text-align: left; border-bottom: 1px solid #f0f0f0; }
+  th { background: #f7f7f7; font-weight: 600; }
+  .num { font-variant-numeric: tabular-nums; }
+  .winner { background: #ecfdf5; }
+  .actions { margin: 16px 0 24px; display: flex; gap: 8px; }
+  button { padding: 8px 14px; border: 1px solid #ccc; background: white; border-radius: 6px; cursor: pointer; }
+  .desc { color: #6b6b6b; font-size: 13px; max-width: 320px; }
+</style>
+</head>
+<body>
+
+<div id="gate" class="gate">
+  <h1>Admin login</h1>
+  <input type="password" id="pwd" placeholder="Password" autofocus>
+  <button onclick="unlock()">Open dashboard</button>
+  <p style="font-size: 12px; color: #888; margin-top: 16px;">Default password: <code>change-me</code>. Edit this file before deploying.</p>
+</div>
+
+<div id="app" class="hidden">
+  <h1>Landing experiment</h1>
+  <div class="actions">
+    <button onclick="renderTable()">Refresh</button>
+    <button onclick="exportCSV()">Export CSV</button>
+    <button onclick="resetData()">Reset (local only)</button>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Variant</th>
+        <th>Description</th>
+        <th>Live link</th>
+        <th class="num">Views</th>
+        <th class="num">Conversions</th>
+        <th class="num">CTR</th>
+        <th class="num">Avg time (s)</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+
+<script>
+  const PASSWORD = 'change-me'; // Replace before deploying. Anything stronger needs server-side auth.
+  const VARIANTS = [
+    { id: 'a', desc: '{{VARIANT_A_DESC}}' },
+    { id: 'b', desc: '{{VARIANT_B_DESC}}' },
+    { id: 'c', desc: '{{VARIANT_C_DESC}}' }
+  ];
+
+  function unlock() {
+    if (document.getElementById('pwd').value === PASSWORD) {
+      document.getElementById('gate').classList.add('hidden');
+      document.getElementById('app').classList.remove('hidden');
+      renderTable();
+    } else {
+      alert('Wrong password.');
+    }
+  }
+
+  function stat(variantId, key) {
+    return parseInt(localStorage.getItem(`lpx:${variantId}:${key}`) || '0');
+  }
+
+  function avgTime(variantId) {
+    const sum = stat(variantId, 'time_sum');
+    const count = stat(variantId, 'time_count');
+    return count ? Math.round(sum / count) : 0;
+  }
+
+  function ctr(variantId) {
+    const v = stat(variantId, 'views');
+    const c = stat(variantId, 'conversions');
+    return v ? ((c / v) * 100).toFixed(1) : '0.0';
+  }
+
+  function renderTable() {
+    const rows = VARIANTS.map(v => ({
+      id: v.id,
+      desc: v.desc,
+      views: stat(v.id, 'views'),
+      conversions: stat(v.id, 'conversions'),
+      ctr: parseFloat(ctr(v.id)),
+      avg: avgTime(v.id)
+    }));
+    const topCtr = Math.max(...rows.map(r => r.ctr));
+    const html = rows.map(r => `
+      <tr class="${r.ctr === topCtr && r.ctr > 0 ? 'winner' : ''}">
+        <td><strong>Variant ${r.id.toUpperCase()}</strong></td>
+        <td class="desc">${r.desc}</td>
+        <td><a href="/variant-${r.id}.html?v=${r.id}" target="_blank">/variant-${r.id}</a></td>
+        <td class="num">${r.views}</td>
+        <td class="num">${r.conversions}</td>
+        <td class="num">${r.ctr}%</td>
+        <td class="num">${r.avg}</td>
+      </tr>
+    `).join('');
+    document.getElementById('rows').innerHTML = html;
+  }
+
+  function exportCSV() {
+    const headers = ['variant', 'description', 'views', 'conversions', 'ctr_pct', 'avg_time_seconds'];
+    const lines = [headers.join(',')];
+    VARIANTS.forEach(v => {
+      lines.push([
+        v.id,
+        '"' + v.desc.replace(/"/g, '""') + '"',
+        stat(v.id, 'views'),
+        stat(v.id, 'conversions'),
+        ctr(v.id),
+        avgTime(v.id)
+      ].join(','));
+    });
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'landing-experiment.csv';
+    a.click();
+  }
+
+  function resetData() {
+    if (!confirm('Reset all local data? This only affects this browser.')) return;
+    VARIANTS.forEach(v => {
+      ['views', 'conversions', 'time_sum', 'time_count', 'viewed'].forEach(k => {
+        localStorage.removeItem(`lpx:${v.id}:${k}`);
+      });
+    });
+    renderTable();
+  }
+
+  document.getElementById('pwd').addEventListener('keydown', e => {
+    if (e.key === 'Enter') unlock();
+  });
+</script>
+</body>
+</html>
